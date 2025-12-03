@@ -1,0 +1,38 @@
+# Minimal requirements for Python 3.14 (avoiding packages that require compilation)
+
+# Web Framework
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart
+websockets
+
+# AWS Bedrock
+boto3
+botocore
+
+# Deepgram
+deepgram-sdk>=3.8.0
+
+# Database - Using SQLite for now (no asyncpg needed)
+sqlalchemy>=2.0.0
+aiosqlite  # SQLite adapter instead of PostgreSQL
+
+# Redis (optional - can fall back to in-memory)
+# redis
+# hiredis
+
+# Environment & Config
+python-dotenv
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+
+# HTTP Client
+httpx
+aiohttp
+
+# Audio Processing
+# numpy  # Skip for now - not critical for MVP
+
+# Development
+pytest
+pytest-asyncio

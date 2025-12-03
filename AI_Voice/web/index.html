@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Voice Intake System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status.disconnected {
+            background: #f0f0f0;
+            color: #666;
+        }
+
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #c82333;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(220, 53, 69, 0.4);
+        }
+
+        .transcript-container {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .transcript-message {
+            margin-bottom: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            line-height: 1.5;
+        }
+
+        .transcript-message.user {
+            background: #e3f2fd;
+            color: #0d47a1;
+            margin-left: 20px;
+        }
+
+        .transcript-message.ai {
+            background: #f3e5f5;
+            color: #4a148c;
+            margin-right: 20px;
+        }
+
+        .transcript-message strong {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+        .audio-visualizer {
+            height: 60px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            margin: 20px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .audio-bar {
+            width: 4px;
+            height: 20px;
+            background: #667eea;
+            margin: 0 2px;
+            border-radius: 2px;
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { height: 20px; }
+            50% { height: 40px; }
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        .info-box h3 {
+            color: #1976D2;
+            margin-bottom: 5px;
+            font-size: 16px;
+        }
+
+        .info-box p {
+            color: #555;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #999;
+            padding: 40px 20px;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎙️ AI Voice Intake System</h1>
+        <p class="subtitle">Legal intake consultation powered by AI</p>
+
+        <div id="status" class="status disconnected">
+            <span class="status-indicator"></span>
+            <span id="status-text">Not connected</span>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn" class="btn-primary" onclick="startCall()">
+                Start Call
+            </button>
+            <button id="stopBtn" class="btn-danger" onclick="stopCall()" disabled>
+                End Call
+            </button>
+        </div>
+
+        <div id="visualizer" class="audio-visualizer" style="display: none;">
+            <div class="audio-bar" style="animation-delay: 0s;"></div>
+            <div class="audio-bar" style="animation-delay: 0.1s;"></div>
+            <div class="audio-bar" style="animation-delay: 0.2s;"></div>
+            <div class="audio-bar" style="animation-delay: 0.3s;"></div>
+            <div class="audio-bar" style="animation-delay: 0.4s;"></div>
+        </div>
+
+        <div class="transcript-container">
+            <div id="transcript">
+                <div class="empty-state">
+                    <div class="empty-state-icon">💬</div>
+                    <p>Conversation will appear here</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-box">
+            <h3>How it works</h3>
+            <p>
+                Click "Start Call" to begin your intake consultation. 
+                The AI will ask you questions about your employment situation. 
+                Speak clearly into your microphone. The conversation typically takes 30-45 minutes.
+            </p>
+        </div>
+    </div>
+
+    <script src="/web/client.js"></script>
+</body>
+</html>

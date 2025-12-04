@@ -8,6 +8,7 @@ let mediaStream = null;
 let audioContext = null;
 let audioWorklet = null;
 let isRecording = false;
+let currentAudioSource = null;
 
 // UI Elements
 const statusDiv = document.getElementById('status');
@@ -167,6 +168,12 @@ function handleServerMessage(message) {
             playAudio(message.data);
             break;
             
+        case 'interrupt':
+            // User interrupted, stop current audio
+            console.log('Interrupt signal received');
+            stopAudioPlayback();
+            break;
+            
         case 'error':
             console.error('Server error:', message.error);
             break;
@@ -196,14 +203,45 @@ async function playAudio(base64Audio) {
             channelData[i] = pcmData[i] / 32768.0;
         }
         
+        // Stop any currently playing audio before starting new audio
+        if (currentAudioSource) {
+            currentAudioSource.stop();
+            currentAudioSource = null;
+        }
+        
         // Create source and play
         const source = audioContext.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(audioContext.destination);
+        
+        // Track the current audio source so we can interrupt it
+        currentAudioSource = source;
+        
+        // Clear reference when audio finishes naturally
+        source.onended = () => {
+            if (currentAudioSource === source) {
+                currentAudioSource = null;
+            }
+        };
+        
         source.start(0);
         
     } catch (error) {
         console.error('Error playing audio:', error);
+    }
+}
+
+/**
+ * Stop any currently playing audio
+ */
+function stopAudioPlayback() {
+    if (currentAudioSource) {
+        try {
+            currentAudioSource.stop();
+        } catch (e) {
+            // Already stopped
+        }
+        currentAudioSource = null;
     }
 }
 

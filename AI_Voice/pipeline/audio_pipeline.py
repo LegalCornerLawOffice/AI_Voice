@@ -53,6 +53,7 @@ class AudioPipeline:
         self.current_transcript = ""
         self.pending_transcripts = []  # Collect transcripts during debounce
         self.debounce_task = None  # Task for debouncing
+        self.first_transcript_time = None  # Track when first transcript arrived
         
         logger.info(f"Audio pipeline initialized for session {session_id}")
     
@@ -93,11 +94,14 @@ class AudioPipeline:
                 self.current_transcript = text
                 await self.audio_handler.send_text(f"[You]: {text}", speaker="user")
                 
-                # If AI is speaking and user starts talking, it's an interrupt
-                if self.is_ai_speaking and len(text.split()) >= 2:
-                    logger.info("User interrupt detected - stopping AI audio")
-                    self.is_ai_speaking = False
-                    # Send interrupt signal to client
+                # Send interrupt signal on ANY user speech (let client handle if audio is playing)
+                # This ensures interrupts work even if is_ai_speaking flag has been reset
+                if text.strip() and len(text.split()) >= 1:
+                    if self.is_ai_speaking:
+                        logger.info(f"🛑 User interrupt detected (interim: '{text}') - stopping AI audio")
+                        self.is_ai_speaking = False
+                    
+                    # Always send interrupt to client (client will stop audio if playing)
                     if hasattr(self.audio_handler, 'websocket'):
                         await self.audio_handler.websocket.send_json({
                             "type": "interrupt",
@@ -108,30 +112,50 @@ class AudioPipeline:
             
             # Final result - add to pending and start/restart debounce timer
             logger.info(f"Final transcript: {text}")
+            
+            # Track when first transcript arrived
+            import time
+            current_time = time.time()
+            if not self.first_transcript_time:
+                self.first_transcript_time = current_time
+            
             self.pending_transcripts.append(text)
             
-            # Cancel existing debounce task if any
-            if self.debounce_task:
-                self.debounce_task.cancel()
-                try:
-                    await self.debounce_task
-                except asyncio.CancelledError:
-                    pass
-            
-            # Start new debounce task (wait 1.5 seconds for more transcripts)
-            self.debounce_task = asyncio.create_task(self._process_after_debounce())
+            # Check if we've been accumulating for more than 5 seconds
+            time_since_first = current_time - self.first_transcript_time
+            if time_since_first >= 5.0:
+                # Force processing now, don't wait for more transcripts
+                logger.info(f"Max debounce time reached ({time_since_first:.1f}s), processing now")
+                if self.debounce_task:
+                    self.debounce_task.cancel()
+                self.debounce_task = asyncio.create_task(self._process_after_debounce(force=True))
+            else:
+                # Cancel existing debounce task if any
+                if self.debounce_task:
+                    self.debounce_task.cancel()
+                    try:
+                        await self.debounce_task
+                    except asyncio.CancelledError:
+                        pass
+                
+                # Start new debounce task (wait 0.3 seconds for more transcripts)
+                self.debounce_task = asyncio.create_task(self._process_after_debounce())
             
         except Exception as e:
             logger.error(f"Error processing transcript: {e}")
     
-    async def _process_after_debounce(self) -> None:
+    async def _process_after_debounce(self, force: bool = False) -> None:
         """
         Process collected transcripts after debounce period.
-        Waits 1.5 seconds to see if more transcripts arrive.
+        Waits 0.3 seconds to see if more transcripts arrive.
+        
+        Args:
+            force: If True, process immediately without waiting
         """
         try:
-            # Wait for debounce period
-            await asyncio.sleep(1.0)
+            # Wait for debounce period unless forced
+            if not force:
+                await asyncio.sleep(0.3)
             
             # Skip if already processing or no transcripts
             if self.is_processing or not self.pending_transcripts:
@@ -142,6 +166,7 @@ class AudioPipeline:
             # Combine all pending transcripts
             combined_text = " ".join(self.pending_transcripts)
             self.pending_transcripts.clear()
+            self.first_transcript_time = None  # Reset timer
             
             logger.info(f"Processing combined transcript: {combined_text}")
             
@@ -156,9 +181,12 @@ class AudioPipeline:
             await self.audio_handler.send_text(f"You: {combined_text}", speaker="user")
             
             # Generate AI response
-            await self.generate_response(combined_text)
-            
-            self.is_processing = False
+            try:
+                await self.generate_response(combined_text)
+            except Exception as e:
+                logger.error(f"Error in generate_response: {e}", exc_info=True)
+            finally:
+                self.is_processing = False
             
         except asyncio.CancelledError:
             # Task was cancelled, transcripts will be processed by new task
@@ -166,6 +194,57 @@ class AudioPipeline:
         except Exception as e:
             logger.error(f"Error in debounce processing: {e}")
             self.is_processing = False
+    
+    async def _reset_speaking_after_delay(self, delay_seconds: float) -> None:
+        """
+        Reset is_ai_speaking flag after audio finishes playing.
+        
+        Args:
+            delay_seconds: How long to wait (audio duration)
+        """
+        try:
+            await asyncio.sleep(delay_seconds + 0.5)  # Add 0.5s buffer
+            if self.is_ai_speaking:
+                self.is_ai_speaking = False
+                logger.debug("AI finished speaking")
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Error resetting speaking flag: {e}")
+    
+    def _clean_text_for_tts(self, text: str) -> str:
+        """
+        Clean text by removing markdown formatting before TTS.
+        
+        Args:
+            text: Raw text from LLM (may contain markdown)
+        
+        Returns:
+            Cleaned text suitable for TTS
+        """
+        import re
+        
+        # Remove bold/italic markdown (**text** or *text* or __text__)
+        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)  # **bold**
+        text = re.sub(r'\*(.+?)\*', r'\1', text)      # *italic*
+        text = re.sub(r'__(.+?)__', r'\1', text)      # __bold__
+        text = re.sub(r'_(.+?)_', r'\1', text)        # _italic_
+        
+        # Remove code blocks and inline code
+        text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)  # ```code blocks```
+        text = re.sub(r'`(.+?)`', r'\1', text)                   # `inline code`
+        
+        # Remove markdown headers (# ## ###)
+        text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove bullet points and list markers
+        text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+        
+        # Clean up extra whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        return text
     
     async def generate_response(self, user_input: str) -> None:
         """
@@ -180,10 +259,11 @@ class AudioPipeline:
             current_section = state.get("current_section", "GREETING")
             collected_fields = state.get("collected_fields", {})
             
-            # Get conversation history
-            history = await self.state_manager.get_conversation_history(
+            # Get conversation history (limit to last 20 messages for speed)
+            full_history = await self.state_manager.get_conversation_history(
                 self.session_id
             )
+            history = full_history[-20:] if len(full_history) > 20 else full_history
             
             # Build prompt
             system_prompt = build_conversation_prompt(
@@ -202,8 +282,8 @@ class AudioPipeline:
             response = await self.llm.generate(
                 messages=bedrock_messages,
                 system_prompt=system_prompt,
-                temperature=0.7,
-                max_tokens=500
+                temperature=0.8,  # Slightly higher for faster, more natural responses
+                max_tokens=200  # Shorter responses for voice conversation
             )
             
             ai_text = response["content"]
@@ -220,14 +300,21 @@ class AudioPipeline:
             # Display AI's message
             await self.audio_handler.send_text(f"AI: {ai_text}")
             
+            # Clean text for TTS (remove markdown formatting)
+            clean_text = self._clean_text_for_tts(ai_text)
+            
             # Synthesize and send audio
-            audio = await self.tts.synthesize(ai_text)
+            audio = await self.tts.synthesize(clean_text)
             
             if audio:
                 self.is_ai_speaking = True
                 await self.audio_handler.send_audio(audio)
-                # Note: is_ai_speaking will be set to False when user interrupts
-                # or we can add a callback when audio finishes playing
+                
+                # Calculate audio duration (16kHz, 16-bit PCM = 32000 bytes/second)
+                audio_duration_seconds = len(audio) / 32000
+                
+                # Schedule task to reset is_ai_speaking after audio finishes
+                asyncio.create_task(self._reset_speaking_after_delay(audio_duration_seconds))
             
             # Check if should advance section
             await self.check_section_progress(collected_fields)
@@ -239,9 +326,9 @@ class AudioPipeline:
         """Send initial greeting."""
         try:
             greeting = (
-                "Hello, thank you for calling. I'm here to help gather some "
+                "Hello, thank you for calling Legal Corner Law Office! I'm here to help gather some "
                 "information about your employment situation. This will take about "
-                "30 to 45 minutes. Everything you share is confidential. "
+                "45 minutes to an hour. Everything you share is confidential. "
                 "Are you ready to begin?"
             )
             
@@ -261,9 +348,19 @@ class AudioPipeline:
             if audio:
                 self.is_ai_speaking = True
                 await self.audio_handler.send_audio(audio)
+                
+                # Calculate audio duration and schedule reset
+                audio_duration_seconds = len(audio) / 32000
+                asyncio.create_task(self._reset_speaking_after_delay(audio_duration_seconds))
+            
+            # Advance to BASIC_INFO section immediately after greeting
+            # This ensures the next LLM response will ask for name/contact info
+            next_section = self.flow.advance_section()
+            await self.state_manager.set_section(self.session_id, next_section)
+            logger.info(f"Advanced from greeting to section: {next_section}")
             
         except Exception as e:
-            logger.error(f"Error sending greeting: {e}")
+            logger.error(f"Error sending greeting: {e}", exc_info=True)
     
     async def check_section_progress(
         self,

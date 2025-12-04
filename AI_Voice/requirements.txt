@@ -11,15 +11,14 @@ botocore==1.35.0
 # Deepgram
 deepgram-sdk==3.10.1
 
-# Database (asyncpg is all we need for now - pure Python, no PostgreSQL required)
-sqlalchemy==2.0.36
+# Database
+# sqlalchemy==2.0.36  # Not needed for simple asyncpg usage
 asyncpg==0.30.0
-alembic==1.14.0
-# psycopg2-binary==2.9.9  # Not needed for MVP - asyncpg handles PostgreSQL
+# alembic==1.14.0  # Will add for migrations later
+# psycopg2-binary==2.9.9  # Not needed - asyncpg handles PostgreSQL
 
 # Redis
-redis==5.2.1
-hiredis==3.0.0
+redis[hiredis]==5.2.1  # hiredis for faster performance
 
 # Environment & Config
 python-dotenv==1.0.1
@@ -33,7 +32,7 @@ aiohttp==3.11.11
 # Audio Processing
 numpy==2.2.1
 # pyaudio==0.2.14  # Not needed for web-based audio (browser handles it)
-audioop-lts==0.2.1  # For mu-law conversion (phone support)
+# audioop-lts==0.2.1  # For mu-law conversion (phone support) - Requires Python 3.13+
 
 # Utilities
 python-json-logger==3.2.1

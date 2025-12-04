@@ -65,7 +65,8 @@ class DeepgramSTTService:
                 sample_rate="16000",
                 interim_results="true",
                 smart_format="true",
-                punctuate="true"
+                punctuate="true",
+                endpointing="100"  # 100ms for faster finalization
             )
             
             # Enter the context manager to get the socket client

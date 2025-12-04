@@ -12,8 +12,10 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from handlers.webrtc import WebRTCAudioHandler
-from services.state_manager_inmemory import InMemoryStateManager
+from services.redis_state_manager import RedisStateManager
+from services.call_repository import CallRepository
 from pipeline.audio_pipeline import AudioPipeline
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(
@@ -22,19 +24,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global state manager
-state_manager: InMemoryStateManager = None
+# Global services
+state_manager: RedisStateManager = None
+call_repository: CallRepository = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle manager for startup/shutdown."""
-    global state_manager
+    global state_manager, call_repository
     
     # Startup
     logger.info("Starting AI Voice Intake System...")
-    state_manager = InMemoryStateManager()
+    
+    # Initialize Redis state manager
+    state_manager = RedisStateManager(redis_url=settings.redis_url)
     await state_manager.initialize()
+    logger.info("Redis state manager initialized")
+    
+    # Initialize call repository
+    call_repository = CallRepository(database_url=settings.database_url)
+    await call_repository.initialize()
+    logger.info("Call repository initialized")
+    
     logger.info("Application started successfully")
     
     yield
@@ -43,6 +55,8 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down...")
     if state_manager:
         await state_manager.close()
+    if call_repository:
+        await call_repository.close()
     logger.info("Application shut down")
 
 
@@ -104,11 +118,15 @@ async def websocket_call(websocket: WebSocket):
     """
     # Generate session ID
     session_id = str(uuid.uuid4())
+    start_time = datetime.utcnow()
     
     logger.info(f"New WebSocket connection: {session_id}")
     
     # Accept connection
     await websocket.accept()
+    
+    audio_handler = None
+    pipeline = None
     
     try:
         # Determine handler type based on first message
@@ -130,6 +148,37 @@ async def websocket_call(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Error in WebSocket handler: {e}", exc_info=True)
     finally:
+        # Save call to database and JSON
+        end_time = datetime.utcnow()
+        try:
+            # Get final state from Redis
+            state = await state_manager.get_state(session_id)
+            if state:
+                conversation_history = state.get("conversation_history", [])
+                collected_fields = state.get("collected_fields", {})
+                
+                # Save to PostgreSQL
+                call_id = await call_repository.save_call(
+                    session_id=session_id,
+                    conversation_history=conversation_history,
+                    collected_fields=collected_fields,
+                    phone_number=None,  # TODO: Get from Twilio metadata
+                    start_time=start_time,
+                    end_time=end_time
+                )
+                logger.info(f"Saved call {session_id} to database (ID: {call_id})")
+                
+                # Also save to JSON for easy inspection
+                json_path = await call_repository.save_call_as_json(
+                    session_id=session_id,
+                    conversation_history=conversation_history,
+                    collected_fields=collected_fields
+                )
+                logger.info(f"Saved call to JSON: {json_path}")
+                
+        except Exception as e:
+            logger.error(f"Error saving call {session_id}: {e}", exc_info=True)
+        
         # Cleanup
         logger.info(f"Cleaning up session: {session_id}")
         if audio_handler:

@@ -37,7 +37,7 @@ class DeepgramTTSService:
     async def synthesize(
         self,
         text: str,
-        voice: str = "aura-asteria-en",  # Professional female voice
+        voice: str = "aura-luna-en",  # Professional female voice
         encoding: str = "linear16",
         sample_rate: int = 16000,
     ) -> bytes:

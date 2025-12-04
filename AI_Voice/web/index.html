@@ -214,6 +214,39 @@
         <h1>🎙️ AI Voice Intake System</h1>
         <p class="subtitle">Legal intake consultation powered by AI</p>
 
+        <div class="section-selector" style="margin-bottom: 20px;">
+            <label for="sectionDropdown" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                Test Section (Optional):
+            </label>
+            <select id="sectionDropdown" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; background: white; cursor: pointer;">
+                <option value="">Full Intake (All Sections)</option>
+                <option value="Client Contact Information">Client Contact Information</option>
+                <option value="Emergency Contact">Emergency Contact</option>
+                <option value="Defendant Information">Defendant Information</option>
+                <option value="Employment Timeline">Employment Timeline</option>
+                <option value="Employment Information">Employment Information</option>
+                <option value="New Employment Since Termination">New Employment Since Termination</option>
+                <option value="Work Schedule">Work Schedule</option>
+                <option value="Workplace Discipline">Workplace Discipline</option>
+                <option value="Wage And Hour Claims">Wage And Hour Claims</option>
+                <option value="Regular Time Pay">Regular Time Pay</option>
+                <option value="Overtime Pay">Overtime Pay</option>
+                <option value="Rest Breaks">Rest Breaks</option>
+                <option value="Meal Periods">Meal Periods</option>
+                <option value="Personal Property">Personal Property</option>
+                <option value="Protected Activities">Protected Activities</option>
+                <option value="FEHA">FEHA</option>
+                <option value="Sexual Harassment">Sexual Harassment</option>
+                <option value="Sick Leave">Sick Leave</option>
+                <option value="Medical/Family Leave">Medical/Family Leave</option>
+                <option value="Miscellaneous Complaints">Miscellaneous Complaints</option>
+                <option value="Witnesses">Witnesses</option>
+            </select>
+            <p style="margin-top: 8px; font-size: 12px; color: #666;">
+                Select a section to test that part of the intake, or leave blank for full intake
+            </p>
+        </div>
+
         <div id="status" class="status disconnected">
             <span class="status-indicator"></span>
             <span id="status-text">Not connected</span>

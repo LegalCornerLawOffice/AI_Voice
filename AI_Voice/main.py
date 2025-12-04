@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from handlers.webrtc import WebRTCAudioHandler
-from services.redis_state_manager import RedisStateManager
+from services.structured_intake_state import StructuredIntakeState
 from services.call_repository import CallRepository
 from pipeline.audio_pipeline import AudioPipeline
 from datetime import datetime
@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global services
-state_manager: RedisStateManager = None
+state_manager: StructuredIntakeState = None
 call_repository: CallRepository = None
 
 
@@ -37,10 +37,10 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting AI Voice Intake System...")
     
-    # Initialize Redis state manager
-    state_manager = RedisStateManager(redis_url=settings.redis_url)
+    # Initialize structured intake state manager
+    state_manager = StructuredIntakeState(redis_url=settings.redis_url)
     await state_manager.initialize()
-    logger.info("Redis state manager initialized")
+    logger.info("Structured intake state manager initialized")
     
     # Initialize call repository
     call_repository = CallRepository(database_url=settings.database_url)
@@ -111,16 +111,25 @@ async def metrics():
 
 
 @app.websocket("/ws/call")
-async def websocket_call(websocket: WebSocket):
+async def websocket_call(
+    websocket: WebSocket,
+    start_section: str = None
+):
     """
     WebSocket endpoint for voice calls.
     Handles both web (WebRTC) and phone (Twilio) calls.
+    
+    Args:
+        websocket: WebSocket connection
+        start_section: Optional section name to start testing from
     """
     # Generate session ID
     session_id = str(uuid.uuid4())
     start_time = datetime.utcnow()
     
     logger.info(f"New WebSocket connection: {session_id}")
+    if start_section:
+        logger.info(f"Testing mode: Starting from section '{start_section}'")
     
     # Accept connection
     await websocket.accept()
@@ -134,10 +143,13 @@ async def websocket_call(websocket: WebSocket):
         audio_handler = WebRTCAudioHandler(websocket, session_id)
         
         # Create and start pipeline
+        # TODO: Add prefilled_data for testing pre-filled values
         pipeline = AudioPipeline(
             session_id=session_id,
             audio_handler=audio_handler,
-            state_manager=state_manager
+            state_manager=state_manager,
+            start_section=start_section,
+            prefilled_data={}  # Can add test data here later
         )
         
         logger.info(f"Starting pipeline for session {session_id}")

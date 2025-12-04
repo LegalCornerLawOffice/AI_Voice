@@ -39,7 +39,16 @@ async function startCall() {
         
         // Connect WebSocket
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws/call`;
+        
+        // Get selected section if any
+        const sectionDropdown = document.getElementById('sectionDropdown');
+        const selectedSection = sectionDropdown ? sectionDropdown.value : '';
+        
+        // Add section as query parameter if selected
+        let wsUrl = `${protocol}//${window.location.host}/ws/call`;
+        if (selectedSection) {
+            wsUrl += `?start_section=${encodeURIComponent(selectedSection)}`;
+        }
         
         websocket = new WebSocket(wsUrl);
         

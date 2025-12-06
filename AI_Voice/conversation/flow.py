@@ -127,8 +127,16 @@ class ConversationFlow:
         completion_rate = collected_count / len(required_fields)
         
         logger.debug(f"Section {section} completion: {completion_rate:.0%}")
+
+        logger.info(
+            f"Section {section} progress: {collected_count}/{len(required_fields)} fields "
+            f"({completion_rate:.0%} complete)"
+        )
         
-        return completion_rate >= 0.6
+        if completion_rate >= 0.6:
+            logger.info(f"Section {section} marked as complete.")
+            return True
+        return False
     
     def should_ask_about_discrimination(
         self,
